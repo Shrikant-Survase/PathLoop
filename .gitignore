@@ -17,7 +17,7 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
-
+Fd
 # Metro
 .metro-health-check*
 
@@ -41,5 +41,4 @@ example
 # generated native folders
 /ios
 /android
-*.json
 notification-tutorials-4719d-firebase-adminsdk-fbsvc-941334c2d8.json
