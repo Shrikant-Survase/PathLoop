@@ -118,16 +118,25 @@ export function usePushNotifications(): UsePushNotifications {
   }, [register]);
 
   const scheduleLocalNotification = useCallback(async (seconds = 2) => {
+    await ensureAndroidChannelAsync();
+    const existing = await Notifications.getPermissionsAsync();
+    if (existing.status !== 'granted') {
+      const requested = await Notifications.requestPermissionsAsync();
+      if (requested.status !== 'granted') {
+        throw new Error('Notification permission was not granted.');
+      }
+    }
     await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Time to hydrate 💧',
         body: 'This is a local test notification.',
+        sound: true,
         data: { source: 'local-test' },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
         seconds,
-        ...(channelReady ? { channelId: ANDROID_CHANNEL_ID } : {}),
+        ...(Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL_ID } : {}),
       },
     });
   }, []);

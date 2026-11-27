@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ACHIEVEMENTS } from '../game/achievements';
 import { useGame } from '../storage/GameProvider';
+import { getNextReminderDate, sendTestReminderNotification } from '../utils/notifications';
 
 const THEME_OPTIONS = [
   { id: 'system', label: 'System' },
@@ -18,14 +19,28 @@ function formatReminderTime(hour, minute) {
   return `${h12}:${String(minute).padStart(2, '0')} ${period}`;
 }
 
+function formatNextScheduleLabel(hour, minute, todaySolved) {
+  const target = getNextReminderDate(hour, minute, todaySolved);
+  const now = new Date();
+  const isToday =
+    target.getFullYear() === now.getFullYear() &&
+    target.getMonth() === now.getMonth() &&
+    target.getDate() === now.getDate();
+  const dayLabel = isToday ? 'Today' : 'Tomorrow';
+  const suffix = !isToday && todaySolved ? ' (today solved)' : '';
+  return `Next: ${dayLabel} at ${formatReminderTime(hour, minute)}${suffix}`;
+}
+
 export default function ProfileScreen() {
-  const { progress, theme, updateSettings } = useGame();
+  const { progress, theme, todayStr, updateSettings } = useGame();
   const settings = progress.settings || {};
+  const todaySolved = Boolean(progress.dailyResults?.[todayStr]);
   const unlockedSet = new Set(progress.unlockedAchievements || []);
 
   const [showTimeModal, setShowTimeModal] = useState(false);
   const [draftHour, setDraftHour] = useState(settings.reminderHour ?? 20);
   const [draftMinute, setDraftMinute] = useState(settings.reminderMinute ?? 0);
+  const [testSentNotice, setTestSentNotice] = useState(false);
 
   const openTimePicker = () => {
     setDraftHour(settings.reminderHour ?? 20);
@@ -33,8 +48,20 @@ export default function ProfileScreen() {
     setShowTimeModal(true);
   };
 
-  const adjustHour = (delta) => {
-    setDraftHour((h) => (h + delta + 24) % 24);
+  const adjustHour12 = (delta) => {
+    setDraftHour((h) => {
+      const isPm = h >= 12;
+      const h12 = h % 12;
+      const nextH12 = (h12 + delta + 12) % 12;
+      return isPm ? nextH12 + 12 : nextH12;
+    });
+  };
+
+  const setPeriod = (period) => {
+    setDraftHour((h) => {
+      const h12 = h % 12;
+      return period === 'PM' ? h12 + 12 : h12;
+    });
   };
 
   const adjustMinute = (delta) => {
@@ -45,6 +72,24 @@ export default function ProfileScreen() {
     updateSettings({ reminderHour: draftHour, reminderMinute: draftMinute });
     setShowTimeModal(false);
   };
+
+  const handleTestNotification = async () => {
+    const res = await sendTestReminderNotification(5);
+    if (!res.ok) {
+      Alert.alert(
+        'Notifications Disabled',
+        'Please allow notification permissions in your device/emulator settings.'
+      );
+      return;
+    }
+    setTestSentNotice(true);
+    setTimeout(() => setTestSentNotice(false), 6000);
+  };
+
+  const draftHour12 = draftHour % 12 === 0 ? 12 : draftHour % 12;
+  const draftPeriod = draftHour >= 12 ? 'PM' : 'AM';
+  const savedHour = settings.reminderHour ?? 20;
+  const savedMinute = settings.reminderMinute ?? 0;
 
   return (
     <SafeAreaView edges={['top']} style={[styles.safeArea, { backgroundColor: theme.background }]}>
@@ -69,17 +114,43 @@ export default function ProfileScreen() {
           </View>
 
           {settings.dailyReminderEnabled ? (
-            <Pressable
-              onPress={openTimePicker}
-              style={[styles.settingRow, { borderBottomColor: theme.border }]}>
-              <Text style={[styles.settingLabel, { color: theme.text }]}>Reminder Time</Text>
-              <View style={[styles.timeBadge, { backgroundColor: theme.accentSoft }]}>
-                <Ionicons name="time-outline" size={16} color={theme.accent} />
-                <Text style={[styles.timeBadgeText, { color: theme.accent }]}>
-                  {formatReminderTime(settings.reminderHour ?? 20, settings.reminderMinute ?? 0)}
-                </Text>
-              </View>
-            </Pressable>
+            <>
+              <Pressable
+                onPress={openTimePicker}
+                style={[styles.settingRow, { borderBottomColor: theme.border }]}>
+                <View style={styles.settingInfo}>
+                  <Text style={[styles.settingLabel, { color: theme.text }]}>Reminder Time</Text>
+                  <Text style={[styles.settingSub, { color: theme.textMuted }]}>
+                    {formatNextScheduleLabel(savedHour, savedMinute, todaySolved)}
+                  </Text>
+                </View>
+                <View style={[styles.timeBadge, { backgroundColor: theme.accentSoft }]}>
+                  <Ionicons name="time-outline" size={16} color={theme.accent} />
+                  <Text style={[styles.timeBadgeText, { color: theme.accent }]}>
+                    {formatReminderTime(savedHour, savedMinute)}
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={handleTestNotification}
+                style={[styles.settingRow, { borderBottomColor: theme.border }]}>
+                <View style={styles.settingInfo}>
+                  <Text style={[styles.settingLabel, { color: theme.text }]}>
+                    Test Notification
+                  </Text>
+                  <Text style={[styles.settingSub, { color: theme.textMuted }]}>
+                    {testSentNotice
+                      ? 'Scheduled! Notification will appear in ~5 seconds.'
+                      : 'Send a test reminder in 5 seconds'}
+                  </Text>
+                </View>
+                <View style={[styles.timeBadge, { backgroundColor: theme.surfaceMuted }]}>
+                  <Ionicons name="notifications-outline" size={15} color={theme.text} />
+                  <Text style={[styles.timeBadgeText, { color: theme.text }]}>Send</Text>
+                </View>
+              </Pressable>
+            </>
           ) : null}
 
           <View style={[styles.settingRow, { borderBottomColor: theme.border }]}>
@@ -193,15 +264,15 @@ export default function ProfileScreen() {
             <View style={styles.stepperRow}>
               <View style={styles.stepperCol}>
                 <Pressable
-                  onPress={() => adjustHour(1)}
+                  onPress={() => adjustHour12(1)}
                   style={[styles.stepBtn, { backgroundColor: theme.surfaceMuted }]}>
                   <Ionicons name="chevron-up" size={20} color={theme.text} />
                 </Pressable>
                 <Text style={[styles.stepVal, { color: theme.text }]}>
-                  {String(draftHour).padStart(2, '0')}
+                  {String(draftHour12).padStart(2, '0')}
                 </Text>
                 <Pressable
-                  onPress={() => adjustHour(-1)}
+                  onPress={() => adjustHour12(-1)}
                   style={[styles.stepBtn, { backgroundColor: theme.surfaceMuted }]}>
                   <Ionicons name="chevron-down" size={20} color={theme.text} />
                 </Pressable>
@@ -211,7 +282,7 @@ export default function ProfileScreen() {
 
               <View style={styles.stepperCol}>
                 <Pressable
-                  onPress={() => adjustMinute(15)}
+                  onPress={() => adjustMinute(1)}
                   style={[styles.stepBtn, { backgroundColor: theme.surfaceMuted }]}>
                   <Ionicons name="chevron-up" size={20} color={theme.text} />
                 </Pressable>
@@ -219,15 +290,41 @@ export default function ProfileScreen() {
                   {String(draftMinute).padStart(2, '0')}
                 </Text>
                 <Pressable
-                  onPress={() => adjustMinute(-15)}
+                  onPress={() => adjustMinute(-1)}
                   style={[styles.stepBtn, { backgroundColor: theme.surfaceMuted }]}>
                   <Ionicons name="chevron-down" size={20} color={theme.text} />
                 </Pressable>
               </View>
+
+              <View style={styles.periodCol}>
+                {['AM', 'PM'].map((period) => {
+                  const isSelected = draftPeriod === period;
+                  return (
+                    <Pressable
+                      key={period}
+                      onPress={() => setPeriod(period)}
+                      style={[
+                        styles.periodBtn,
+                        {
+                          backgroundColor: isSelected ? theme.accent : theme.surfaceMuted,
+                          borderColor: isSelected ? theme.accent : theme.border,
+                        },
+                      ]}>
+                      <Text
+                        style={[
+                          styles.periodBtnText,
+                          { color: isSelected ? theme.accentText : theme.text },
+                        ]}>
+                        {period}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
             <Text style={[styles.formattedPreview, { color: theme.textMuted }]}>
-              {formatReminderTime(draftHour, draftMinute)}
+              {formatNextScheduleLabel(draftHour, draftMinute, todaySolved)}
             </Text>
 
             <View style={styles.pickerActions}>
@@ -393,6 +490,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+  },
+  periodCol: {
+    gap: 8,
+    marginLeft: 4,
+  },
+  periodBtn: {
+    width: 48,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  periodBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   stepperCol: {
     alignItems: 'center',

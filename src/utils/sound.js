@@ -27,12 +27,12 @@ async function getAudioPlayers() {
             })
             .catch(() => {});
         }
-        const stepPlayer = mod.createAudioPlayer(stepAsset);
-        const backtrackPlayer = mod.createAudioPlayer(backtrackAsset);
-        const winPlayer = mod.createAudioPlayer(winAsset);
-        stepPlayer.volume = 0.7;
-        backtrackPlayer.volume = 0.6;
-        winPlayer.volume = 0.9;
+        const stepPlayer = mod.createAudioPlayer(stepAsset, { downloadFirst: true });
+        const backtrackPlayer = mod.createAudioPlayer(backtrackAsset, { downloadFirst: true });
+        const winPlayer = mod.createAudioPlayer(winAsset, { downloadFirst: true });
+        stepPlayer.volume = 0.85;
+        backtrackPlayer.volume = 0.75;
+        winPlayer.volume = 1.0;
         players = {
           step: stepPlayer,
           backtrack: backtrackPlayer,
@@ -40,6 +40,7 @@ async function getAudioPlayers() {
         };
         return players;
       } catch (err) {
+        audioModulePromise = null;
         if (!warnedUnavailable) {
           warnedUnavailable = true;
           console.warn(
@@ -63,11 +64,20 @@ function playEffect(key) {
     .then(async (map) => {
       const player = map?.[key];
       if (!player) return;
+      if (player.currentTime > 0 || player.playing) {
+        try {
+          await player.seekTo(0);
+        } catch {
+          // Ignore seek errors on short clips or unready players; still attempt play().
+        }
+      }
       try {
-        await player.seekTo(0);
         player.play();
-      } catch {
-        // Ignore transient playback errors during rapid drags.
+      } catch (err) {
+        if (!warnedUnavailable) {
+          warnedUnavailable = true;
+          console.warn('[PathLoop] Failed to play sound effect:', err?.message || err);
+        }
       }
     })
     .catch(() => {});

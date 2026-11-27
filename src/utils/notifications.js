@@ -6,6 +6,8 @@ export const NOTIFICATION_IDS = {
   STREAK_RISK: 'pathloop-streak-risk',
 };
 
+export const REMINDER_CHANNEL_ID = 'pathloop-reminders';
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldPlaySound: true,
@@ -15,16 +17,20 @@ Notifications.setNotificationHandler({
   }),
 });
 
+let channelConfigured = false;
+
 async function ensureChannel() {
-  if (Platform.OS !== 'android') return;
+  if (Platform.OS !== 'android' || channelConfigured) return;
   try {
-    await Notifications.setNotificationChannelAsync('pathloop-reminders', {
+    await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {
       name: 'Daily Reminders',
       // eslint-disable-next-line import/namespace
-      importance: Notifications.AndroidImportance.DEFAULT,
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
     });
-  } catch {
-    // Non-fatal fallback to default channel.
+    channelConfigured = true;
+  } catch (err) {
+    console.warn('[notifications] Could not create notification channel:', err);
   }
 }
 
@@ -37,7 +43,7 @@ export async function ensureNotificationPermissions() {
   return requested.status === 'granted';
 }
 
-function buildNextReminderDate(hour, minute, forceTomorrow) {
+export function getNextReminderDate(hour, minute, forceTomorrow) {
   const now = new Date();
   const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
   if (forceTomorrow || target.getTime() <= now.getTime() + 5000) {
@@ -51,7 +57,7 @@ function buildNextReminderDate(hour, minute, forceTomorrow) {
  * Cancels today's reminders once today's daily puzzle is solved.
  */
 export async function syncNotifications({ settings, todaySolved, currentStreak }) {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS === 'web') return { scheduled: false, reason: 'web' };
 
   try {
     await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_IDS.DAILY).catch(() => {});
@@ -60,25 +66,28 @@ export async function syncNotifications({ settings, todaySolved, currentStreak }
     );
 
     if (!settings?.dailyReminderEnabled) {
-      return;
+      return { scheduled: false, reason: 'disabled' };
     }
 
     const granted = await ensureNotificationPermissions();
-    if (!granted) return;
+    if (!granted) return { scheduled: false, reason: 'permission-denied' };
 
     const hour = typeof settings.reminderHour === 'number' ? settings.reminderHour : 20;
     const minute = typeof settings.reminderMinute === 'number' ? settings.reminderMinute : 0;
-    const dailyDate = buildNextReminderDate(hour, minute, todaySolved);
+    const dailyDate = getNextReminderDate(hour, minute, todaySolved);
+    const androidChannel = Platform.OS === 'android' ? { channelId: REMINDER_CHANNEL_ID } : {};
 
     await Notifications.scheduleNotificationAsync({
       identifier: NOTIFICATION_IDS.DAILY,
       content: {
         title: "Today's PathLoop is ready!",
         body: 'Draw the path and keep your daily streak alive.',
+        sound: true,
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: dailyDate,
+        ...androidChannel,
       },
     });
 
@@ -91,15 +100,43 @@ export async function syncNotifications({ settings, todaySolved, currentStreak }
           content: {
             title: 'Streak at risk!',
             body: `Your ${currentStreak}-day PathLoop streak ends at midnight.`,
+            sound: true,
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
             date: riskDate,
+            ...androidChannel,
           },
         });
       }
     }
-  } catch {
-    // Ignore scheduling errors in unsupported simulators/environments.
+
+    return { scheduled: true, dailyDate };
+  } catch (err) {
+    console.warn('[notifications] Failed to sync notifications:', err);
+    return { scheduled: false, reason: err?.message || 'schedule-error' };
   }
+}
+
+/**
+ * Schedule an immediate 5-second local test notification (works on emulators).
+ */
+export async function sendTestReminderNotification(seconds = 5) {
+  if (Platform.OS === 'web') return { ok: false, reason: 'web' };
+  const granted = await ensureNotificationPermissions();
+  if (!granted) return { ok: false, reason: 'permission-denied' };
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'PathLoop Reminder Test',
+      body: 'Local notifications are working on this device.',
+      sound: true,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds,
+      ...(Platform.OS === 'android' ? { channelId: REMINDER_CHANNEL_ID } : {}),
+    },
+  });
+  return { ok: true };
 }

@@ -206,16 +206,20 @@ const styles = StyleSheet.create({
   },
   worldsScroll: {
     flexGrow: 0,
+    flexShrink: 0,
+    marginBottom: 12,
   },
   worldsBar: {
     paddingHorizontal: 16,
     gap: 8,
-    paddingBottom: 12,
+    alignItems: 'center',
   },
   worldTab: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
+    minHeight: 38,
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 999,
@@ -223,11 +227,15 @@ const styles = StyleSheet.create({
   },
   worldTabText: {
     fontSize: 13,
+    lineHeight: 18,
     fontWeight: '700',
+    includeFontPadding: false,
   },
   worldTabCount: {
     fontSize: 11,
+    lineHeight: 15,
     fontWeight: '600',
+    includeFontPadding: false,
   },
   gridContent: {
     paddingHorizontal: 16,
