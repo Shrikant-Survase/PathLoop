@@ -107,7 +107,7 @@ export default function LevelsScreen() {
               {worldCfg.label} World ({worldCfg.size}×{worldCfg.size})
             </Text>
             <Text style={[styles.worldBannerSub, { color: theme.textMuted }]}>
-              3★ Target: under {worldCfg.targetTimeSeconds}s with 0 hints
+              3★ Target: under {worldCfg.targetTimeSeconds}s with 0 hints.
             </Text>
           </View>
           <Text style={[styles.worldProgress, { color: worldCfg.color }]}>
